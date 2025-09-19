@@ -5,3 +5,5 @@ Phase_1/yolov8m.pt
 Phase_1/yolov8n.pt
 Phase_1/yolov8s.pt
 Phase_1/yolov8x.pt
+.DS_Store
+__pycache__/
