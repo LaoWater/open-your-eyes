@@ -10,7 +10,7 @@
 
 ### Architecture Evolution
 
-Our platform has evolved from domain-specific detection to a general-purpose visual understanding system:
+Evolving from domain-specific detection to a general-purpose visual understanding system:
 
 #### 1. Domain-Specific Approach (Initial Restaurant Focus)
 - **Learning**: Specialized models perform well but lack transferability
