@@ -1,4 +1,6 @@
-# hand_control.py
+# Captures nice yet basic - can easily get much more complex to vector analysis, pixel diff, etc
+# 
+# # hand_control.py
 import time
 from collections import deque
 
