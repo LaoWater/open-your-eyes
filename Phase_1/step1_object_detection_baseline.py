@@ -1,5 +1,7 @@
 # Step 1
 # Ok now the technique has slightlty changed. we capturing the video stream and showing live on video (rendering overlay)
+# Still using resnet50 Model and COCO instances
+
 
 # Yet on mac, this is extraordinarily laggy, slow and unsatisfying to watch/use.
 # Let's explore deeper into more specific libraries designed for mac, like ultralytics - and other optimized models like YOLO, MobileNet, etc

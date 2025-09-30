@@ -1,13 +1,3 @@
-# Step 0
-# # Hit fantastic bottleneck of senseless result and inference.
-# Well, script is loading ResNet50 pretrained on ImageNet, then we immediately replaced the final layer with random weights for your 3 classes (gloves_on, gloves_off, no_hands).
-# 👉 Since we never fine-tuned on actual glove/no-glove images, the model is basically random guessing → hence we'll always see "no_hands" ~0.5 (softmax tends to hover around uniform for untrained layers).
-
-# So before we can do specialized classification, we need an “easing in” step:
-# First just use a model as-is to detect general objects (hands, people, cups, gloves if it exists in the dataset).
-# Later, fine-tune on your specific safety dataset.
-# Current Techinque: Live-listen to video and send in image into the network - get prediction.
-
 import torch
 import torchvision
 from torchvision import transforms
@@ -20,20 +10,28 @@ class RestaurantSafetyDetector:
     def __init__(self):
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
         
-        # Load pre-trained YOLO or Faster R-CNN
-        # Using torchvision's pre-trained model (like using a pre-trained LLM)
+        # Load pre-trained Faster R-CNN
         self.model = torchvision.models.detection.fasterrcnn_resnet50_fpn(pretrained=True)
         self.model.to(self.device)
         self.model.eval()
         
-        # COCO classes (pre-trained knowledge, like LLM's training data)
+        # Complete COCO classes (91 classes)
         self.coco_classes = [
             '__background__', 'person', 'bicycle', 'car', 'motorcycle', 'airplane', 'bus',
             'train', 'truck', 'boat', 'traffic light', 'fire hydrant', 'N/A', 'stop sign',
-            # ... truncated for brevity, but includes common objects
+            'parking meter', 'bench', 'bird', 'cat', 'dog', 'horse', 'sheep', 'cow',
+            'elephant', 'bear', 'zebra', 'giraffe', 'N/A', 'backpack', 'umbrella', 'N/A', 'N/A',
+            'handbag', 'tie', 'suitcase', 'frisbee', 'skis', 'snowboard', 'sports ball',
+            'kite', 'baseball bat', 'baseball glove', 'skateboard', 'surfboard', 'tennis racket',
+            'bottle', 'N/A', 'wine glass', 'cup', 'fork', 'knife', 'spoon', 'bowl',
+            'banana', 'apple', 'sandwich', 'orange', 'broccoli', 'carrot', 'hot dog', 'pizza',
+            'donut', 'cake', 'chair', 'couch', 'potted plant', 'bed', 'N/A', 'dining table',
+            'N/A', 'N/A', 'toilet', 'N/A', 'tv', 'laptop', 'mouse', 'remote', 'keyboard',
+            'cell phone', 'microwave', 'oven', 'toaster', 'sink', 'refrigerator', 'N/A', 'book',
+            'clock', 'vase', 'scissors', 'teddy bear', 'hair drier', 'toothbrush'
         ]
         
-        # Custom safety rules (your domain knowledge)
+        # Custom safety rules
         self.safety_rules = {
             'hands_near_food': {'requires_gloves': True, 'min_distance': 50},
             'handling_utensils': {'requires_gloves': True},
@@ -59,13 +57,10 @@ class RestaurantSafetyDetector:
             input_tensor = self.preprocess_image(image).unsqueeze(0)
             predictions = self.model(input_tensor)
             
-            return predictions[0]  # First (and only) image in batch
+            return predictions[0]
     
     def analyze_safety_violations(self, image, confidence_threshold=0.5):
-        """
-        Main safety analysis function
-        Similar to how you'd analyze text with an LLM
-        """
+        """Main safety analysis function"""
         # Step 1: Detect all objects
         detections = self.detect_objects(image)
         
@@ -93,12 +88,15 @@ class RestaurantSafetyDetector:
         
         for i, score in enumerate(scores):
             if score > threshold:
-                confident_objects.append({
-                    'bbox': boxes[i],  # [x1, y1, x2, y2]
-                    'label': self.coco_classes[labels[i]],
-                    'confidence': score,
-                    'center': self.get_bbox_center(boxes[i])
-                })
+                label_idx = int(labels[i])
+                # Safety check for label index
+                if 0 <= label_idx < len(self.coco_classes):
+                    confident_objects.append({
+                        'bbox': boxes[i],
+                        'label': self.coco_classes[label_idx],
+                        'confidence': float(score),
+                        'center': self.get_bbox_center(boxes[i])
+                    })
         
         return confident_objects
     
@@ -107,7 +105,7 @@ class RestaurantSafetyDetector:
         return [(bbox[0] + bbox[2]) / 2, (bbox[1] + bbox[3]) / 2]
     
     def apply_safety_rules(self, detections, image):
-        """Apply restaurant safety rules - this is your domain logic!"""
+        """Apply restaurant safety rules"""
         violations = []
         
         # Find people in the image
@@ -124,7 +122,7 @@ class RestaurantSafetyDetector:
         violations = []
         person_bbox = person['bbox']
         
-        # Extract hand regions (simplified - in practice you'd use pose estimation)
+        # Extract hand regions
         hand_regions = self.estimate_hand_locations(person_bbox, image)
         
         for hand_region in hand_regions:
@@ -139,36 +137,37 @@ class RestaurantSafetyDetector:
                     'type': 'missing_gloves_near_food',
                     'severity': 'high',
                     'location': hand_region,
-                    'person_id': id(person),  # Simple ID
+                    'person_id': id(person),
                     'description': 'Hands near food without gloves'
                 })
         
         return violations
     
     def estimate_hand_locations(self, person_bbox, image):
-        """
-        Simplified hand detection - in production you'd use:
-        - MediaPipe Hand Detection
-        - OpenPose
-        - Custom trained hand detector
-        """
+        """Simplified hand detection"""
         x1, y1, x2, y2 = person_bbox
         person_width = x2 - x1
         person_height = y2 - y1
         
-        # Estimate hand locations (very rough approximation)
+        # Estimate hand locations (rough approximation)
         left_hand = [x1, y1 + person_height * 0.3, x1 + person_width * 0.2, y1 + person_height * 0.7]
         right_hand = [x2 - person_width * 0.2, y1 + person_height * 0.3, x2, y1 + person_height * 0.7]
         
         return [left_hand, right_hand]
     
     def detect_gloves_in_region(self, hand_region, image):
-        """
-        Detect gloves in hand region - simplified version
-        In practice, you'd train a specific glove classifier
-        """
+        """Detect gloves in hand region - simplified color-based detection"""
         # Extract hand region from image
+        h, w = image.shape[:2]
         x1, y1, x2, y2 = [int(coord) for coord in hand_region]
+        
+        # Clamp coordinates to image bounds
+        x1, y1 = max(0, x1), max(0, y1)
+        x2, y2 = min(w, x2), min(h, y2)
+        
+        if x2 <= x1 or y2 <= y1:
+            return False
+        
         hand_crop = image[y1:y2, x1:x2]
         
         if hand_crop.size == 0:
@@ -198,7 +197,8 @@ class RestaurantSafetyDetector:
         
         # Food-related objects (from COCO classes)
         food_items = ['bowl', 'cup', 'fork', 'knife', 'spoon', 'banana', 'apple', 
-                     'sandwich', 'orange', 'broccoli', 'carrot', 'hot dog', 'pizza']
+                     'sandwich', 'orange', 'broccoli', 'carrot', 'hot dog', 'pizza',
+                     'donut', 'cake', 'bottle', 'wine glass', 'dining table']
         
         for detection in all_detections:
             if detection['label'] in food_items:
@@ -256,24 +256,37 @@ def monitor_restaurant_safety():
     detector = RestaurantSafetyDetector()
     cap = cv2.VideoCapture(0)  # Your camera
     
+    if not cap.isOpened():
+        print("Error: Could not open camera")
+        return
+    
     print("Restaurant Safety Monitor Active")
     print("Press 'q' to quit, 's' to save current analysis")
+    
+    frame_count = 0
     
     while True:
         ret, frame = cap.read()
         if not ret:
+            print("Error: Could not read frame")
             break
         
+        frame_count += 1
+        
         # Analyze every 5th frame (performance optimization)
-        if cap.get(cv2.CAP_PROP_POS_FRAMES) % 5 == 0:
-            analysis = detector.analyze_safety_violations(frame)
-            vis_frame = detector.visualize_results(frame, analysis)
-            
-            # Log violations
-            if analysis['violations']:
-                print(f"VIOLATIONS DETECTED: {len(analysis['violations'])}")
-                for v in analysis['violations']:
-                    print(f"  - {v['type']}: {v['description']}")
+        if frame_count % 5 == 0:
+            try:
+                analysis = detector.analyze_safety_violations(frame)
+                vis_frame = detector.visualize_results(frame, analysis)
+                
+                # Log violations
+                if analysis['violations']:
+                    print(f"VIOLATIONS DETECTED: {len(analysis['violations'])}")
+                    for v in analysis['violations']:
+                        print(f"  - {v['type']}: {v['description']}")
+            except Exception as e:
+                print(f"Error during analysis: {e}")
+                vis_frame = frame
         else:
             vis_frame = frame
         
@@ -287,11 +300,14 @@ def monitor_restaurant_safety():
             timestamp = cv2.getTickCount()
             cv2.imwrite(f'safety_check_{timestamp}.jpg', vis_frame)
             
-            analysis = detector.analyze_safety_violations(frame)
-            with open(f'safety_report_{timestamp}.json', 'w') as f:
-                json.dump(analysis, f, indent=2, default=str)
-            
-            print(f"Analysis saved! Safety Score: {analysis['safety_score']:.1f}")
+            try:
+                analysis = detector.analyze_safety_violations(frame)
+                with open(f'safety_report_{timestamp}.json', 'w') as f:
+                    json.dump(analysis, f, indent=2, default=str)
+                
+                print(f"Analysis saved! Safety Score: {analysis['safety_score']:.1f}")
+            except Exception as e:
+                print(f"Error saving analysis: {e}")
     
     cap.release()
     cv2.destroyAllWindows()
